@@ -1,8 +1,12 @@
 const { Pool } = require('pg');
 
+const dbUrl = (process.env.DATABASE_URL || '').trim();
+console.log('[DB] DATABASE_URL set:', !!dbUrl);
+if (dbUrl) console.log('[DB] URL starts with:', dbUrl.substring(0, 40) + '...');
+
 const pool = new Pool(
-  process.env.DATABASE_URL
-    ? { connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } }
+  dbUrl
+    ? { connectionString: dbUrl, ssl: { rejectUnauthorized: false } }
     : {
         host: process.env.DB_HOST || 'localhost',
         port: Number(process.env.DB_PORT) || 5432,
