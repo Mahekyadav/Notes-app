@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Notes App</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app-layout">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <span class="logo">📝 Notes</span>
+      </div>
+
+      <div class="sidebar-search">
+        <input type="text" id="searchInput" placeholder="Search notes…" />
+      </div>
+
+      <button class="btn btn-primary btn-new-note" id="newNoteBtn">+ New Note</button>
+
+      <div class="sidebar-section-label">Tags</div>
+      <ul class="tag-filter-list" id="tagFilterList">
+        <li class="tag-filter-item active" data-tag="">All Notes</li>
+      </ul>
+
+      <div class="sidebar-footer">
+        <div class="user-info" id="userInfo"></div>
+        <button class="btn btn-ghost btn-logout" id="logoutBtn">Logout</button>
+      </div>
+    </aside>
+
+    <!-- Main content -->
+    <main class="main-content">
+      <!-- Note list -->
+      <section class="note-list-panel">
+        <div class="note-list" id="noteList">
+          <div class="empty-state">No notes yet. Create one!</div>
+        </div>
+      </section>
+
+      <!-- Note editor -->
+      <section class="editor-panel" id="editorPanel">
+        <div class="editor-empty" id="editorEmpty">
+          <p>Select a note or create a new one</p>
+        </div>
+
+        <div class="editor-form" id="editorForm" style="display:none">
+          <div class="editor-toolbar">
+            <button class="btn btn-ghost btn-icon" id="pinBtn" title="Pin note">📌</button>
+            <button class="btn btn-danger" id="deleteBtn">Delete</button>
+            <button class="btn btn-primary" id="saveBtn">Save</button>
+          </div>
+          <input type="text" id="noteTitle" class="editor-title" placeholder="Note title…" />
+          <textarea id="noteContent" class="editor-content" placeholder="Start writing…"></textarea>
+          <div class="editor-tags">
+            <div class="editor-tags-label">Tags</div>
+            <div class="tag-checkboxes" id="tagCheckboxes"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
