@@ -11,7 +11,13 @@ app.use(cors());
 app.use(express.json());
 
 async function initDB() {
+  console.log('DATABASE_URL present:', !!process.env.DATABASE_URL);
   const db = require('./db/db');
+
+  // Test raw connection before running schema
+  await db.query('SELECT 1');
+  console.log('Database connection OK.');
+
   const schema = fs.readFileSync(path.join(__dirname, 'db', 'schema.sql'), 'utf8');
   const statements = schema.split(';').map(s => s.trim()).filter(s => s.length > 0);
   for (const stmt of statements) {
@@ -36,6 +42,7 @@ initDB()
     });
   })
   .catch(err => {
-    console.error('Failed to initialize database:', err.message);
+    console.error('Failed to initialize database:');
+    console.error(err);
     process.exit(1);
   });
