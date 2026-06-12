@@ -6,11 +6,11 @@ const router = express.Router();
 router.use(auth);
 
 async function getNoteTags(noteId) {
-  const [tags] = await db.execute(
-    'SELECT t.* FROM tags t JOIN note_tags nt ON t.id = nt.tag_id WHERE nt.note_id = ?',
+  const result = await db.query(
+    'SELECT t.* FROM tags t JOIN note_tags nt ON t.id = nt.tag_id WHERE nt.note_id = $1',
     [noteId]
   );
-  return tags;
+  return result.rows;
 }
 
 router.get('/', async (req, res) => {
@@ -18,30 +18,30 @@ router.get('/', async (req, res) => {
   const userId = req.user.id;
 
   try {
-    let rows;
+    let result;
     if (tag) {
-      [rows] = await db.execute(`
+      result = await db.query(`
         SELECT DISTINCT n.* FROM notes n
         JOIN note_tags nt ON n.id = nt.note_id
         JOIN tags t ON nt.tag_id = t.id
-        WHERE n.user_id = ? AND t.name = ?
+        WHERE n.user_id = $1 AND t.name = $2
         ORDER BY n.is_pinned DESC, n.updated_at DESC
       `, [userId, tag]);
     } else if (q) {
-      [rows] = await db.execute(`
+      result = await db.query(`
         SELECT * FROM notes
-        WHERE user_id = ? AND (title LIKE ? OR content LIKE ?)
+        WHERE user_id = $1 AND (title ILIKE $2 OR content ILIKE $3)
         ORDER BY is_pinned DESC, updated_at DESC
       `, [userId, `%${q}%`, `%${q}%`]);
     } else {
-      [rows] = await db.execute(
-        'SELECT * FROM notes WHERE user_id = ? ORDER BY is_pinned DESC, updated_at DESC',
+      result = await db.query(
+        'SELECT * FROM notes WHERE user_id = $1 ORDER BY is_pinned DESC, updated_at DESC',
         [userId]
       );
     }
 
     const notesWithTags = await Promise.all(
-      rows.map(async note => ({ ...note, tags: await getNoteTags(note.id) }))
+      result.rows.map(async note => ({ ...note, tags: await getNoteTags(note.id) }))
     );
     res.json(notesWithTags);
   } catch (err) {
@@ -51,13 +51,13 @@ router.get('/', async (req, res) => {
 
 router.get('/:id', async (req, res) => {
   try {
-    const [rows] = await db.execute(
-      'SELECT * FROM notes WHERE id = ? AND user_id = ?',
+    const result = await db.query(
+      'SELECT * FROM notes WHERE id = $1 AND user_id = $2',
       [req.params.id, req.user.id]
     );
-    if (rows.length === 0) return res.status(404).json({ error: 'Note not found' });
-    const tags = await getNoteTags(rows[0].id);
-    res.json({ ...rows[0], tags });
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Note not found' });
+    const tags = await getNoteTags(result.rows[0].id);
+    res.json({ ...result.rows[0], tags });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch note' });
   }
@@ -68,22 +68,21 @@ router.post('/', async (req, res) => {
   if (!title) return res.status(400).json({ error: 'title is required' });
 
   try {
-    const [result] = await db.execute(
-      'INSERT INTO notes (user_id, title, content) VALUES (?, ?, ?)',
+    const result = await db.query(
+      'INSERT INTO notes (user_id, title, content) VALUES ($1, $2, $3) RETURNING *',
       [req.user.id, title, content || '']
     );
-    const noteId = result.insertId;
+    const note = result.rows[0];
 
     const ids = Array.isArray(tagIds) ? tagIds : [];
     if (ids.length > 0) {
-      const placeholders = ids.map(() => '(?, ?)').join(', ');
-      const values = ids.flatMap(tid => [noteId, tid]);
+      const placeholders = ids.map((_, i) => `($${i * 2 + 1}, $${i * 2 + 2})`).join(', ');
+      const values = ids.flatMap(tid => [note.id, tid]);
       await db.query(`INSERT INTO note_tags (note_id, tag_id) VALUES ${placeholders}`, values);
     }
 
-    const [noteRows] = await db.execute('SELECT * FROM notes WHERE id = ?', [noteId]);
-    const tags = await getNoteTags(noteId);
-    res.status(201).json({ ...noteRows[0], tags });
+    const tags = await getNoteTags(note.id);
+    res.status(201).json({ ...note, tags });
   } catch (err) {
     res.status(500).json({ error: 'Failed to create note' });
   }
@@ -94,26 +93,25 @@ router.put('/:id', async (req, res) => {
   if (!title) return res.status(400).json({ error: 'title is required' });
 
   try {
-    const [result] = await db.execute(
-      'UPDATE notes SET title = ?, content = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?',
+    const result = await db.query(
+      'UPDATE notes SET title = $1, content = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3 AND user_id = $4 RETURNING *',
       [title, content || '', req.params.id, req.user.id]
     );
-    if (result.affectedRows === 0) return res.status(404).json({ error: 'Note not found' });
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Note not found' });
 
-    const noteId = req.params.id;
+    const note = result.rows[0];
     const ids = Array.isArray(tagIds) ? tagIds : [];
 
-    await db.execute('DELETE FROM note_tags WHERE note_id = ?', [noteId]);
+    await db.query('DELETE FROM note_tags WHERE note_id = $1', [note.id]);
 
     if (ids.length > 0) {
-      const placeholders = ids.map(() => '(?, ?)').join(', ');
-      const values = ids.flatMap(tid => [noteId, tid]);
+      const placeholders = ids.map((_, i) => `($${i * 2 + 1}, $${i * 2 + 2})`).join(', ');
+      const values = ids.flatMap(tid => [note.id, tid]);
       await db.query(`INSERT INTO note_tags (note_id, tag_id) VALUES ${placeholders}`, values);
     }
 
-    const [noteRows] = await db.execute('SELECT * FROM notes WHERE id = ?', [noteId]);
-    const tags = await getNoteTags(noteId);
-    res.json({ ...noteRows[0], tags });
+    const tags = await getNoteTags(note.id);
+    res.json({ ...note, tags });
   } catch (err) {
     res.status(500).json({ error: 'Failed to update note' });
   }
@@ -121,11 +119,11 @@ router.put('/:id', async (req, res) => {
 
 router.delete('/:id', async (req, res) => {
   try {
-    const [result] = await db.execute(
-      'DELETE FROM notes WHERE id = ? AND user_id = ?',
+    const result = await db.query(
+      'DELETE FROM notes WHERE id = $1 AND user_id = $2',
       [req.params.id, req.user.id]
     );
-    if (result.affectedRows === 0) return res.status(404).json({ error: 'Note not found' });
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Note not found' });
     res.json({ message: 'Deleted successfully' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete note' });
@@ -134,21 +132,20 @@ router.delete('/:id', async (req, res) => {
 
 router.put('/:id/pin', async (req, res) => {
   try {
-    const [rows] = await db.execute(
-      'SELECT is_pinned FROM notes WHERE id = ? AND user_id = ?',
+    const check = await db.query(
+      'SELECT is_pinned FROM notes WHERE id = $1 AND user_id = $2',
       [req.params.id, req.user.id]
     );
-    if (rows.length === 0) return res.status(404).json({ error: 'Note not found' });
+    if (check.rows.length === 0) return res.status(404).json({ error: 'Note not found' });
 
-    const newPin = rows[0].is_pinned ? 0 : 1;
-    await db.execute(
-      'UPDATE notes SET is_pinned = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?',
+    const newPin = check.rows[0].is_pinned ? 0 : 1;
+    const result = await db.query(
+      'UPDATE notes SET is_pinned = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND user_id = $3 RETURNING *',
       [newPin, req.params.id, req.user.id]
     );
 
-    const [noteRows] = await db.execute('SELECT * FROM notes WHERE id = ?', [req.params.id]);
     const tags = await getNoteTags(req.params.id);
-    res.json({ ...noteRows[0], tags });
+    res.json({ ...result.rows[0], tags });
   } catch (err) {
     res.status(500).json({ error: 'Failed to update pin' });
   }
